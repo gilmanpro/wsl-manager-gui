@@ -20,12 +20,25 @@ metrics.db
 backups/
 snapshots/
 
+# Security: sensitive files
+secrets.json
+config.json
+*.key
+*.pem
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+id_ecdsa
+id_ecdsa.*
+id_dsa
+id_dsa.*
+*.p12
+*.pfx
+
 # Windows
 Thumbs.db
 desktop.ini
-
-# Lanzador de autoarranque (rutas absolutas de esta maquina)
-/start_wsl_manager_gui.vbs
 
 # Lanzador de autoarranque (rutas absolutas de esta maquina)
 /start_wsl_manager_gui.vbs
