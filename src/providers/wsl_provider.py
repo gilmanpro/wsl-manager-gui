@@ -26,17 +26,17 @@ class WslProvider:
 
     # -- helpers -----------------------------------------------------------
 
-    def _wsl(self, args: list[str], timeout: float = 120.0) -> CommandResult:
+    def _wsl(self, args: list[str], timeout: float = 30.0) -> CommandResult:
         return run([self.wsl_exe, *args], timeout=timeout)
 
-    def _wsl_d(self, distro: str, args: list[str], timeout: float = 120.0) -> CommandResult:
+    def _wsl_d(self, distro: str, args: list[str], timeout: float = 30.0) -> CommandResult:
         return run([self.wsl_exe, "-d", distro, *args], timeout=timeout)
 
     # -- ciclo de vida (W2) -------------------------------------------------
 
     def list_distros(self) -> list[Distro]:
         """Lista distros con estado/version. La IP se rellena por el watcher."""
-        result = self._wsl(["-l", "-v"], timeout=60)
+        result = self._wsl(["-l", "-v"], timeout=15)
         if not result.ok:
             # wsl -l -v falla si WSL no esta inicializado; intenta -l --running
             if "no installed" in result.error.lower():
@@ -50,7 +50,7 @@ class WslProvider:
         ]
 
     def _default_name(self) -> str:
-        for raw in self._wsl(["-l", "-v"], timeout=60).output.splitlines():
+        for raw in self._wsl(["-l", "-v"], timeout=15).output.splitlines():
             if raw.startswith("*") or raw.startswith(" *"):
                 m = re.match(r"^\s*\*?\s*(\S+)", raw)
                 if m:
@@ -58,14 +58,14 @@ class WslProvider:
         return ""
 
     def running_distros(self) -> list[str]:
-        return parse_running_output(self._wsl(["-l", "--running"], timeout=60).output)
+        return parse_running_output(self._wsl(["-l", "--running"], timeout=15).output)
 
     def start(self, name: str) -> CommandResult:
         # Arrancar sin abrir consola: ejecutar un comando trivial dentro.
-        return self._wsl_d(name, ["--", "true"], timeout=120)
+        return self._wsl_d(name, ["--", "true"], timeout=30)
 
     def stop(self, name: str) -> CommandResult:
-        return self._wsl(["--terminate", name], timeout=60)
+        return self._wsl(["--terminate", name], timeout=15)
 
     def restart(self, name: str) -> CommandResult:
         self.stop(name)
@@ -73,7 +73,13 @@ class WslProvider:
         return self.start(name)
 
     def shutdown_all(self) -> CommandResult:
-        return self._wsl(["--shutdown"], timeout=60)
+        """Stop each running distro individually (wsl --shutdown can hang)."""
+        results = []
+        for d in self.list_distros():
+            if d.state == "Running":
+                r = self.stop(d.name)
+                results.append(f"{d.name}: {'ok' if r.ok else r.error}")
+        return CommandResult(ok=True, output="\n".join(results), error="")
 
     def version(self) -> CommandResult:
         return self._wsl(["--version"], timeout=30)
@@ -86,7 +92,7 @@ class WslProvider:
     def get_ip(self, name: str) -> Optional[str]:
         if name not in self.running_distros():
             return None
-        out = self._wsl_d(name, ["hostname", "-I"], timeout=30).output
+        out = self._wsl_d(name, ["hostname", "-I"], timeout=8).output
         return first_ip(out)
 
     def get_all_ips(self) -> dict[str, Optional[str]]:
