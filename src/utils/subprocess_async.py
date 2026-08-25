@@ -148,15 +148,27 @@ def breaker_state() -> dict:
 
 
 def _decode(data: bytes) -> str:
-    """wsl.exe a veces escribe UTF-16-LE; intenta utf-8 primero y cae a utf-16."""
+    """wsl.exe escribe UTF-16-LE (con o sin BOM). Detecta y decodifica bien."""
     if not data:
         return ""
-    for enc in ("utf-8", "utf-16-le"):
+    # BOM UTF-16
+    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
         try:
-            return data.decode(enc)
+            return data.decode("utf-16")
         except (UnicodeDecodeError, UnicodeError):
-            continue
-    return data.decode("utf-8", errors="replace")
+            pass
+    # Sin BOM: probar utf-8; si el resultado tiene bytes nulos, es UTF-16-LE
+    try:
+        s = data.decode("utf-8")
+        if "\x00" in s:
+            return data.decode("utf-16-le", errors="replace")
+        return s
+    except UnicodeDecodeError:
+        pass
+    try:
+        return data.decode("utf-16-le")
+    except (UnicodeDecodeError, UnicodeError):
+        return data.decode("utf-8", errors="replace")
 
 
 def spawn_detached(args: list[str]) -> CommandResult:
