@@ -31,6 +31,13 @@ def parse_running_output(output: str) -> list[str]:
         line = raw.replace("\x00", "").strip()
         if not line or "NAME" in line.upper():
             continue
+        # Saltar encabezados localizados ("Distribuciones de subsistema...:")
+        if line.endswith(":") or ":" in line and line.split(":")[0].strip().lower() in (
+            "distribuciones de subsistema de windows para linux",
+            "windows subsystem for linux distributions",
+            "distribuciones",
+        ):
+            continue
         names.append(line.split()[0])
     return names
 
