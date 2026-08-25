@@ -1,42 +1,150 @@
-"""Ejecucion de subprocesos con timeout y captura limpia de stdout/stderr."""
+"""Ejecucion de subprocesos con timeout, serializacion y cortocircuito.
+
+Prevencion de WSL colgado (causa raiz):
+1. SERIALIZACION: todos los comandos wsl.exe se ejecutan de uno en uno
+   (lock global). Evita que la app lance decenas de wsl.exe concurrentes
+   que se apilan cuando el servicio esta lento.
+2. CIRCUIT BREAKER: si un comando wsl.exe se cuelga (timeout), se abre un
+   cortocircuito de 30s. Durante ese periodo TODOS los comandos wsl.exe
+   fallan al instante SIN lanzar proceso (evita la acumulacion de wsl.exe
+   huerfanos que saturan el servicio WSL).
+3. TREE-KILL: al colgarse, mata wsl.exe y sus hijos (taskkill /T) para no
+   dejar procesos huerfanos.
+"""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import threading
+import time
 
 from src.providers.base import CommandResult
 
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
+_WSL_LOCK = threading.Lock()
+_BREAKER_OPEN = False
+_BREAKER_UNTIL = 0.0
+_BREAKER_COOLDOWN = 30.0  # segundos con el cortocircuito abierto
 
-def run(args: list[str], timeout: float = 120.0, cwd: str | None = None) -> CommandResult:
-    """Ejecuta un comando y devuelve CommandResult. Nunca lanza excepcion."""
+
+def _is_wsl(args: list[str]) -> bool:
+    if not args:
+        return False
+    base = os.path.basename(str(args[0])).lower()
+    return base in ("wsl", "wsl.exe")
+
+
+def _breaker_check() -> bool:
+    """True si el cortocircuito esta abierto (fallar rapido, sin lanzar)."""
+    global _BREAKER_OPEN, _BREAKER_UNTIL
+    if not _BREAKER_OPEN:
+        return False
+    if time.time() >= _BREAKER_UNTIL:
+        _BREAKER_OPEN = False  # cerrar: probar de nuevo
+        return False
+    return True
+
+
+def _breaker_open_now() -> None:
+    global _BREAKER_OPEN, _BREAKER_UNTIL
+    _BREAKER_OPEN = True
+    _BREAKER_UNTIL = time.time() + _BREAKER_COOLDOWN
+
+
+def _kill_tree(pid: int) -> None:
+    """Mata el proceso y TODA su arbol (wsl.exe + hijos huerfanos)."""
     try:
-        proc = subprocess.run(
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True, timeout=5,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+    except Exception:
+        pass
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "wsl.exe"],
+            capture_output=True, timeout=5,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+    except Exception:
+        pass
+
+
+def run(args: list[str], timeout: float = 10.0, cwd: str | None = None) -> CommandResult:
+    """Ejecuta un comando y devuelve CommandResult. Nunca lanza excepcion."""
+    is_wsl = _is_wsl(args)
+
+    # Circuit breaker: si WSL esta colgado, fallar al instante sin lanzar wsl.exe
+    if is_wsl and _breaker_check():
+        return CommandResult(ok=False, error="WSL no responde (cortocircuito)", exit_code=-1)
+
+    # Serializacion: solo un wsl.exe a la vez (evita acumulacion)
+    if is_wsl:
+        _WSL_LOCK.acquire()
+    try:
+        proc = subprocess.Popen(
             args,
-            capture_output=True,
-            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=cwd,
             creationflags=_CREATE_NO_WINDOW,
         )
-        stdout = _decode(proc.stdout)
-        stderr = _decode(proc.stderr)
-        ok = proc.returncode == 0
-        if not ok and not stderr and stdout:
-            # wsl.exe escribe los errores en stdout (UTF-16) con rc != 0
-            stderr, stdout = stdout, ""
-        return CommandResult(
-            ok=ok,
-            output=stdout,
-            error=stderr,
-            exit_code=proc.returncode,
-        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            if is_wsl:
+                _kill_tree(proc.pid)
+                _breaker_open_now()
+                return CommandResult(
+                    ok=False, error="WSL no responde (timeout, cortocircuito 30s)",
+                    exit_code=-1,
+                )
+            return CommandResult(ok=False, error=f"timeout tras {timeout}s", exit_code=-1)
     except FileNotFoundError as e:
         return CommandResult(ok=False, error=f"ejecutable no encontrado: {e}")
-    except subprocess.TimeoutExpired as e:
-        return CommandResult(ok=False, error=f"timeout tras {timeout}s", exit_code=-1)
     except OSError as e:
         return CommandResult(ok=False, error=str(e), exit_code=-1)
+    finally:
+        if is_wsl:
+            _WSL_LOCK.release()
+
+    stdout = _decode(stdout)
+    stderr = _decode(stderr)
+    ok = proc.returncode == 0
+    if not ok and not stderr and stdout:
+        # wsl.exe escribe los errores en stdout (UTF-16) con rc != 0
+        stderr, stdout = stdout, ""
+    if is_wsl and ok:
+        # WSL respondio: cerrar cortocircuito (si estaba abierto)
+        global _BREAKER_OPEN, _BREAKER_UNTIL
+        _BREAKER_OPEN = False
+        _BREAKER_UNTIL = 0.0
+    return CommandResult(
+        ok=ok,
+        output=stdout,
+        error=stderr,
+        exit_code=proc.returncode,
+    )
+
+
+def reset_breaker() -> None:
+    """Cierra el cortocircuito manualmente (tras un reinicio de WSL)."""
+    global _BREAKER_OPEN, _BREAKER_UNTIL
+    _BREAKER_OPEN = False
+    _BREAKER_UNTIL = 0.0
+
+
+def breaker_state() -> dict:
+    """Estado del cortocircuito (para diagnstico)."""
+    return {
+        "open": _BREAKER_OPEN,
+        "until": _BREAKER_UNTIL,
+        "cooldown": _BREAKER_COOLDOWN,
+    }
 
 
 def _decode(data: bytes) -> str:

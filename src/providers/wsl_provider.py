@@ -36,7 +36,7 @@ class WslProvider:
 
     def list_distros(self) -> list[Distro]:
         """Lista distros con estado/version. La IP se rellena por el watcher."""
-        result = self._wsl(["-l", "-v"], timeout=15)
+        result = self._wsl(["-l", "-v"], timeout=5)
         if not result.ok:
             # wsl -l -v falla si WSL no esta inicializado; intenta -l --running
             if "no installed" in result.error.lower():
@@ -50,7 +50,7 @@ class WslProvider:
         ]
 
     def _default_name(self) -> str:
-        for raw in self._wsl(["-l", "-v"], timeout=15).output.splitlines():
+        for raw in self._wsl(["-l", "-v"], timeout=5).output.splitlines():
             if raw.startswith("*") or raw.startswith(" *"):
                 m = re.match(r"^\s*\*?\s*(\S+)", raw)
                 if m:
@@ -58,14 +58,14 @@ class WslProvider:
         return ""
 
     def running_distros(self) -> list[str]:
-        return parse_running_output(self._wsl(["-l", "--running"], timeout=15).output)
+        return parse_running_output(self._wsl(["-l", "--running"], timeout=5).output)
 
     def start(self, name: str) -> CommandResult:
         # Arrancar sin abrir consola: ejecutar un comando trivial dentro.
-        return self._wsl_d(name, ["--", "true"], timeout=30)
+        return self._wsl_d(name, ["--", "true"], timeout=15)
 
     def stop(self, name: str) -> CommandResult:
-        return self._wsl(["--terminate", name], timeout=15)
+        return self._wsl(["--terminate", name], timeout=10)
 
     def restart(self, name: str) -> CommandResult:
         self.stop(name)
@@ -82,10 +82,10 @@ class WslProvider:
         return CommandResult(ok=True, output="\n".join(results), error="")
 
     def version(self) -> CommandResult:
-        return self._wsl(["--version"], timeout=30)
+        return self._wsl(["--version"], timeout=5)
 
     def is_installed(self) -> bool:
-        return self._wsl(["--version"], timeout=30).ok
+        return self._wsl(["--version"], timeout=5).ok
 
     # -- IPs (W3) ------------------------------------------------------------
 
