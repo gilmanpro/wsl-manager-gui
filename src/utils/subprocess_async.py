@@ -54,18 +54,14 @@ def _breaker_open_now() -> None:
 
 
 def _kill_tree(pid: int) -> None:
-    """Mata el proceso y TODA su arbol (wsl.exe + hijos huerfanos)."""
+    """Mata el proceso y SU arbol (hijos) sin tocar otros procesos.
+
+    IMPORTANTE: NO usa 'taskkill /IM wsl.exe' (eso mataria TODAS las
+    distros). Solo el PID especifico y sus descendientes.
+    """
     try:
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)],
-            capture_output=True, timeout=5,
-            creationflags=_CREATE_NO_WINDOW,
-        )
-    except Exception:
-        pass
-    try:
-        subprocess.run(
-            ["taskkill", "/F", "/IM", "wsl.exe"],
             capture_output=True, timeout=5,
             creationflags=_CREATE_NO_WINDOW,
         )
