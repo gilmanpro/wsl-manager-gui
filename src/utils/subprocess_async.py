@@ -73,8 +73,15 @@ def _kill_tree(pid: int) -> None:
         pass
 
 
-def run(args: list[str], timeout: float = 10.0, cwd: str | None = None) -> CommandResult:
-    """Ejecuta un comando y devuelve CommandResult. Nunca lanza excepcion."""
+def run(args: list[str], timeout: float = 10.0, cwd: str | None = None,
+        breaker: bool = True) -> CommandResult:
+    """Ejecuta un comando y devuelve CommandResult. Nunca lanza excepcion.
+
+    breaker=True: un timeout abre el cortocircuito global (comandos
+    criticos: list/start/stop/export). breaker=False: el timeout NO abre
+    el cortocircuito (sondeos opcionales como IP, que pueden fallar sin
+    que WSL este caido).
+    """
     is_wsl = _is_wsl(args)
 
     # Circuit breaker: si WSL esta colgado, fallar al instante sin lanzar wsl.exe
@@ -98,11 +105,13 @@ def run(args: list[str], timeout: float = 10.0, cwd: str | None = None) -> Comma
             proc.kill()
             if is_wsl:
                 _kill_tree(proc.pid)
-                _breaker_open_now()
-                return CommandResult(
-                    ok=False, error="WSL no responde (timeout, cortocircuito 30s)",
-                    exit_code=-1,
-                )
+                if breaker:
+                    _breaker_open_now()
+                    return CommandResult(
+                        ok=False, error="WSL no responde (timeout, cortocircuito 30s)",
+                        exit_code=-1,
+                    )
+                return CommandResult(ok=False, error=f"timeout tras {timeout}s", exit_code=-1)
             return CommandResult(ok=False, error=f"timeout tras {timeout}s", exit_code=-1)
     except FileNotFoundError as e:
         return CommandResult(ok=False, error=f"ejecutable no encontrado: {e}")

@@ -26,11 +26,12 @@ class WslProvider:
 
     # -- helpers -----------------------------------------------------------
 
-    def _wsl(self, args: list[str], timeout: float = 30.0) -> CommandResult:
-        return run([self.wsl_exe, *args], timeout=timeout)
+    def _wsl(self, args: list[str], timeout: float = 30.0, breaker: bool = True) -> CommandResult:
+        return run([self.wsl_exe, *args], timeout=timeout, breaker=breaker)
 
-    def _wsl_d(self, distro: str, args: list[str], timeout: float = 30.0) -> CommandResult:
-        return run([self.wsl_exe, "-d", distro, *args], timeout=timeout)
+    def _wsl_d(self, distro: str, args: list[str], timeout: float = 30.0,
+               breaker: bool = True) -> CommandResult:
+        return run([self.wsl_exe, "-d", distro, *args], timeout=timeout, breaker=breaker)
 
     # -- ciclo de vida (W2) -------------------------------------------------
 
@@ -92,7 +93,7 @@ class WslProvider:
     def get_ip(self, name: str) -> Optional[str]:
         if name not in self.running_distros():
             return None
-        out = self._wsl_d(name, ["hostname", "-I"], timeout=8).output
+        out = self._wsl_d(name, ["hostname", "-I"], timeout=8, breaker=False).output
         return first_ip(out)
 
     def get_all_ips(self) -> dict[str, Optional[str]]:
