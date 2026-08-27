@@ -58,13 +58,13 @@ class TestWslProvider:
             mock_run.return_value = CommandResult(ok=True)
             r = provider.start("ubuntu-dev")
         assert r.ok
-        mock_run.assert_called_once_with(["wsl.exe", "-d", "ubuntu-dev", "--", "true"], timeout=120)
+        mock_run.assert_called_once_with(["wsl.exe", "-d", "ubuntu-dev", "--", "true"], timeout=15, breaker=True)
 
     def test_stop(self, provider):
         with patch("src.providers.wsl_provider.run") as mock_run:
             mock_run.return_value = CommandResult(ok=True)
             provider.stop("ubuntu-dev")
-        mock_run.assert_called_once_with(["wsl.exe", "--terminate", "ubuntu-dev"], timeout=60)
+        mock_run.assert_called_once_with(["wsl.exe", "--terminate", "ubuntu-dev"], timeout=10, breaker=True)
 
     def test_get_ip_only_when_running(self, provider):
         with patch.object(provider, "running_distros", return_value=["ubuntu-dev"]), patch(
@@ -118,7 +118,7 @@ class TestWslProvider:
         with patch.object(provider, "list_distros", return_value=[Distro(name="u", state="Running", version=2)]), patch(
             "src.providers.wsl_provider.run"
         ) as mock_run:
-            def fake(args, timeout=120):
+            def fake(args, timeout=120, **kwargs):
                 # metrics() combina todo en una sola llamada bash -lc
                 if "bash" in args and "-lc" in args:
                     return CommandResult(
