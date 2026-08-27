@@ -7,7 +7,15 @@
 
 > Gestión de distros WSL2 con una sola aplicación: **GUI en system tray**, **CLI operativo**, **API REST segura**, **servidor MCP** para agentes LLM y **panel web local**. GUI, CLI, API y MCP comparten los mismos providers: lo que se puede hacer en una interfaz se puede hacer en todas.
 
-**Proyecto hermano:** [port-forwarder-app](https://github.com/gilbertomanc/port-forwarder-app) — redirección de puertos Windows → WSL y túneles SSH hacia VPS. Ambas apps son **independientes y coexisten** en la misma máquina (puertos propios).
+### Ecosistema
+
+| Repositorio | Descripción |
+|---|---|
+| **[wsl-port](https://github.com/gilmanpro/wsl-port)** | ⭐ **App unificada** — WSL Manager + Port Forwarder en 1 clic (recomendada) |
+| **wsl-manager-gui** (este repo) | Base de gestión WSL — vendored en wsl-port |
+| [port-forwarder-app](https://github.com/gilmanpro/port-forwarder-app) | Base de port forwarding — vendored en wsl-port |
+
+> **Recomendado:** usa **[wsl-port](https://github.com/gilmanpro/wsl-port)** que unifica ambas bases. Este repo sigue siendo útil de forma independiente y coexiste con port-forwarder-app (puertos propios).
 
 ---
 
@@ -38,7 +46,7 @@
 ## Instalación
 
 ```bash
-git clone https://github.com/gilbertomanc/wsl-manager-gui
+git clone https://github.com/gilmanpro/wsl-manager-gui
 cd wsl-manager-gui
 python -m venv .venv
 .venv\Scripts\activate
@@ -250,7 +258,7 @@ Pasos para quitar **toda** huella de la app en Windows. Ejecuta en PowerShell
 4. Envía un pull request describiendo el cambio.
 
 Reporta bugs o pide funciones en
-[Issues](https://github.com/gilbertomanc/wsl-manager-gui/issues).
+[Issues](https://github.com/gilmanpro/wsl-manager-gui/issues).
 
 ## Licencia
 
